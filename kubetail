@@ -1,0 +1,62 @@
+#!/bin/bash
+set -e
+
+while [[ $# -gt 0 ]]
+do
+    key="$1"
+
+    case $key in
+        -p|--pods)
+        POD_LIST="$2"
+        shift # past argument
+        shift # past value
+        ;;
+        -t|--tail)
+        TAIL="$2"
+        shift # past argument
+        shift # past value
+        ;;
+        -g|--grep)
+        GREP="$2"
+        shift # past argument
+        shift # past value
+        ;;
+        *)
+              # unknown option
+        ;;
+    esac
+done
+
+function kill_kubectl_processes {
+	kill 0
+}
+
+trap kill_kubectl_processes EXIT SIGTERM
+
+if hash kubectl 2>/dev/null; then
+    KUBECTL_BIN=${KUBECTL_BIN:-"kubectl"}
+elif ! hash ${KUBECTL_BIN}; then
+    echo >&2 "kubectl is not installed"
+    exit 1
+fi
+
+IFS=',' read -r -a PODS <<< "$POD_LIST"
+echo "Tailing pods ${PODS[@]}"
+
+KUBE_LOG="${KUBECTL_BIN} logs -f %pod%"
+
+for pod in "${PODS[@]}"
+do
+    COMMAND+=${KUBE_LOG/\%pod\%/$pod}
+    if [[ ! -z "${TAIL}" ]]; then
+        COMMAND+=" --tail=${TAIL}"
+    fi
+    if [[ ! -z "${GREP}" ]]; then
+        COMMAND+=" | grep ${GREP}"
+    fi
+    COMMAND+=" & "
+done
+
+COMMAND=${COMMAND%& }
+echo ${COMMAND}
+eval "${COMMAND}"
