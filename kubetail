@@ -1,16 +1,24 @@
 #!/bin/bash
 set -e
 
+arg=$@
+delimiter=--
+s=$arg$delimiter
+array=();
+while [[ $s ]]; do
+    if [[ ${s%%"$delimiter"*} == pods* ]]; then
+        array+=( "${s%%"$delimiter"*}" );
+    fi
+    s=${s#*"$delimiter"};
+done;
+
+POD_LIST=${array[0]/pods /}
+
 while [[ $# -gt 0 ]]
 do
     key="$1"
 
     case $key in
-        -p|--pods)
-        POD_LIST="$2"
-        shift # past argument
-        shift # past value
-        ;;
         -t|--tail)
         TAIL="$2"
         shift # past argument
@@ -21,11 +29,23 @@ do
         shift # past argument
         shift # past value
         ;;
+        -l|--label)
+        LABEL="$2"
+        shift # past argument
+        shift # past value
+        ;;
         *)
-              # unknown option
+        shift # past argument
         ;;
     esac
 done
+
+# Continue with --pods argument when both --pods and --label are passed
+# Output from both arguments to be concatenated in the future
+if [[ ! -z "${POD_LIST}" && ! -z "${LABEL}" ]]; then
+    echo "Both --pods and --label arguments passed. Ignoring labels and continue with --pods arguments"
+    unset LABEL
+fi
 
 function kill_kubectl_processes {
 	kill 0
@@ -40,7 +60,12 @@ elif ! hash ${KUBECTL_BIN}; then
     exit 1
 fi
 
-IFS=',' read -r -a PODS <<< "$POD_LIST"
+if [[ -z "${POD_LIST}" && ! -z "${LABEL}" ]]; then
+    POD_LIST="$(kubectl get pods -l="${LABEL}" | awk '{print $1}' | grep -v 'NAME')"
+    POD_LIST="${POD_LIST//$'\n'/ }"
+fi
+
+IFS=' ' read -r -a PODS <<< "$POD_LIST"
 echo "Tailing pods ${PODS[@]}"
 
 KUBE_LOG="${KUBECTL_BIN} logs -f %pod%"
